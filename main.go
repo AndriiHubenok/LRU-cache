@@ -10,104 +10,38 @@ import (
 
 // TODO (cache-basics): implement per the lesson description.
 
-type LRUCache struct {
-	cap  int
-	keys []string
-	hits int
-}
-
-func (c *LRUCache) Access(key string) {
-	if c.cap == 0 {
-		return
-	}
-
-	for i, k := range c.keys {
-		if k == key {
-			c.hits++
-
-			c.keys = append(c.keys[:i], c.keys[i+1:]...)
-			c.keys = append(c.keys, key)
-			return
-		}
-	}
-
-	if len(c.keys) == c.cap {
-		c.keys = c.keys[1:]
-	}
-	c.keys = append(c.keys, key)
-}
-
-type FIFOCache struct {
-	cap  int
-	keys []string
-	hits int
-}
-
-func (c *FIFOCache) Access(key string) {
-	if c.cap == 0 {
-		return
-	}
-
-	for _, k := range c.keys {
-		if k == key {
-			c.hits++
-			return
-		}
-	}
-
-	if len(c.keys) == c.cap {
-		c.keys = c.keys[1:]
-	}
-	c.keys = append(c.keys, key)
-}
-
-type LFUCache struct {
-	cap  int
-	keys []string
-	freq map[string]int
-	hits int
-}
-
-func (c *LFUCache) Access(key string) {
-	if c.cap == 0 {
-		return
-	}
-
-	for _, k := range c.keys {
-		if k == key {
-			c.hits++
-			c.freq[key]++
-			return
-		}
-	}
-
-	if len(c.keys) == c.cap {
-		minFreq := -1
-		evictIdx := -1
-
-		for i, k := range c.keys {
-			if minFreq == -1 || c.freq[k] < minFreq {
-				minFreq = c.freq[k]
-				evictIdx = i
-			}
-		}
-
-		evictKey := c.keys[evictIdx]
-		delete(c.freq, evictKey)
-		c.keys = append(c.keys[:evictIdx], c.keys[evictIdx+1:]...)
-	}
-
-	c.keys = append(c.keys, key)
-	c.freq[key] = 1
-}
+//type LRUCache struct {
+//	cap  int
+//	keys []string
+//	hits int
+//}
+//
+//func (c *LRUCache) Access(key string) {
+//	if c.cap == 0 {
+//		return
+//	}
+//
+//	for i, k := range c.keys {
+//		if k == key {
+//			c.hits++
+//
+//			c.keys = append(c.keys[:i], c.keys[i+1:]...)
+//			c.keys = append(c.keys, key)
+//			return
+//		}
+//	}
+//
+//	if len(c.keys) == c.cap {
+//		c.keys = c.keys[1:]
+//	}
+//	c.keys = append(c.keys, key)
+//}
 
 func main() {
 	sc := bufio.NewScanner(os.Stdin)
 	sc.Buffer(make([]byte, 1024*1024), 1024*1024)
 
-	var lru LRUCache
-	var fifo FIFOCache
-	var lfu LFUCache
+	var lru *NaiveLRU
 
 	for sc.Scan() {
 		line := sc.Text()
@@ -116,32 +50,94 @@ func main() {
 		}
 
 		if strings.HasPrefix(line, "CAP") {
+
 			numStr := strings.TrimSpace(line[4:])
-			size, err := strconv.Atoi(numStr)
+			num, err := strconv.Atoi(numStr)
 			if err != nil {
-				fmt.Println("Error:", err)
-				continue
+				fmt.Println(err)
 			}
 
-			lru = LRUCache{cap: size, keys: make([]string, 0, size)}
-			fifo = FIFOCache{cap: size, keys: make([]string, 0, size)}
-			lfu = LFUCache{
-				cap:  size,
-				keys: make([]string, 0, size),
-				freq: make(map[string]int),
+			lru = NewNaiveLRU(num)
+			fmt.Println("OK")
+
+		} else if strings.HasPrefix(line, "PUT") {
+
+			strs := strings.Split(line[4:], " ")
+			num, err := strconv.Atoi(strs[1])
+			if err != nil {
+				fmt.Println(err)
 			}
-		}
 
-		if strings.HasPrefix(line, "ACCESS") {
-			value := strings.TrimSpace(line[7:])
+			lru.put(strs[0], num)
+			fmt.Println("OK")
 
-			lru.Access(value)
-			fifo.Access(value)
-			lfu.Access(value)
-		}
+		} else if strings.HasPrefix(line, "GET") {
 
-		if strings.HasPrefix(line, "STATS") {
-			fmt.Printf("lru_hits=%d fifo_hits=%d lfu_hits=%d\n", lru.hits, fifo.hits, lfu.hits)
+			str := strings.TrimSpace(line[4:])
+
+			fmt.Println(lru.get(str))
+		} else if strings.HasPrefix(line, "STATE") {
+			lru.state()
 		}
 	}
+}
+
+type NaiveLRU struct {
+	capacity int
+	keys     []string
+	values   map[string]int
+}
+
+func NewNaiveLRU(capacity int) *NaiveLRU {
+	return &NaiveLRU{
+		capacity: capacity,
+		keys:     make([]string, 0, capacity),
+		values:   make(map[string]int),
+	}
+}
+
+func (c *NaiveLRU) put(key string, value int) {
+
+	if c.values[key] != 0 {
+		c.values[key] = value
+		c.updateKeys(key)
+		return
+	}
+
+	if len(c.keys) >= c.capacity {
+		delete(c.values, c.keys[len(c.keys)-1])
+		c.values[key] = value
+		c.updateKeys(key)
+		return
+	}
+
+	c.values[key] = value
+	c.updateKeys(key)
+}
+
+func (c *NaiveLRU) get(key string) int {
+	c.updateKeys(key)
+	return c.values[key]
+}
+
+func (c *NaiveLRU) state() {
+	for _, k := range c.keys {
+		fmt.Printf("%s=%d ", k, c.values[k])
+	}
+}
+
+func (c *NaiveLRU) updateKeys(key string) {
+	var newKeys []string
+	newKeys = append(newKeys, key)
+
+	for _, k := range c.keys {
+		if len(newKeys) >= c.capacity {
+			break
+		}
+		if k == key {
+			continue
+		}
+		newKeys = append(newKeys, k)
+	}
+	c.keys = newKeys
 }
