@@ -41,7 +41,7 @@ func main() {
 	sc := bufio.NewScanner(os.Stdin)
 	sc.Buffer(make([]byte, 1024*1024), 1024*1024)
 
-	var lru *NaiveLRU
+	dll := NewDLL()
 
 	for sc.Scan() {
 		line := sc.Text()
@@ -49,36 +49,108 @@ func main() {
 			continue
 		}
 
-		if strings.HasPrefix(line, "CAP") {
+		if strings.HasPrefix(line, "ADD-FRONT") {
 
-			numStr := strings.TrimSpace(line[4:])
-			num, err := strconv.Atoi(numStr)
-			if err != nil {
-				fmt.Println(err)
-			}
-
-			lru = NewNaiveLRU(num)
-			fmt.Println("OK")
-
-		} else if strings.HasPrefix(line, "PUT") {
-
-			strs := strings.Split(line[4:], " ")
+			strs := strings.Split(line[10:], " ")
 			num, err := strconv.Atoi(strs[1])
 			if err != nil {
 				fmt.Println(err)
 			}
 
-			lru.put(strs[0], num)
+			node := NewNode()
+			node.key = strs[0]
+			node.value = num
+			dll.addFront(node)
 			fmt.Println("OK")
 
-		} else if strings.HasPrefix(line, "GET") {
+		} else if strings.HasPrefix(line, "REMOVE-KEY") {
 
-			str := strings.TrimSpace(line[4:])
+			str := strings.TrimSpace(line[11:])
 
-			fmt.Println(lru.get(str))
-		} else if strings.HasPrefix(line, "STATE") {
-			lru.state()
+			node, err := dll.findNodeByKey(str)
+			if err != nil {
+				fmt.Println(err)
+			}
+
+			dll.removeKey(node)
+			fmt.Println("OK")
+
+		} else if strings.HasPrefix(line, "MOVE-FRONT") {
+
+			str := strings.TrimSpace(line[11:])
+
+			node, err := dll.findNodeByKey(str)
+			if err != nil {
+				fmt.Println(err)
+			}
+
+			dll.moveFront(node)
+			fmt.Println("OK")
+		} else if strings.HasPrefix(line, "LIST") {
+			dll.list()
 		}
+	}
+}
+
+type Node struct {
+	prev, next *Node
+	key        string
+	value      int
+}
+
+func NewNode() *Node {
+	return &Node{
+		prev:  nil,
+		next:  nil,
+		key:   "",
+		value: 0,
+	}
+}
+
+type DLL struct {
+	head, tail *Node
+}
+
+func NewDLL() *DLL {
+	head := NewNode()
+	tail := NewNode()
+	head.next = tail
+	tail.prev = head
+	return &DLL{
+		head: head,
+		tail: tail,
+	}
+}
+
+func (d *DLL) addFront(n *Node) {
+	n.prev = d.head
+	n.next = d.head.next
+	d.head.next.prev = n
+	d.head.next = n
+}
+
+func (d *DLL) removeKey(n *Node) {
+	n.prev.next = n.next
+	n.next.prev = n.prev
+}
+
+func (d *DLL) moveFront(n *Node) {
+	d.removeKey(n)
+	d.addFront(n)
+}
+
+func (d *DLL) findNodeByKey(key string) (*Node, error) {
+	for n := d.head; n != nil; n = n.next {
+		if n.key == key {
+			return n, nil
+		}
+	}
+	return nil, fmt.Errorf("key not found")
+}
+
+func (d *DLL) list() {
+	for n := d.head.next; n != d.tail; n = n.next {
+		fmt.Printf("%s=%d ", n.key, n.value)
 	}
 }
 
