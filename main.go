@@ -151,8 +151,8 @@ func (d *DLL) findNodeByKey(key string) (*Node, error) {
 func (d *DLL) list() {
 	for n := d.head.next; n != d.tail; n = n.next {
 		fmt.Printf("%s=%d ", n.key, n.value)
-		fmt.Println()
 	}
+	fmt.Println()
 }
 
 type NaiveLRU struct {
