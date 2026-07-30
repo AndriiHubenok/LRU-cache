@@ -1,0 +1,42 @@
+{
+  "course": "build-lru-cache",
+  "language": "go",
+  "language_id": 60,
+  "entrypoint": "main.go",
+  "version": 1,
+  "content_hash": "7521a429639dfb38",
+  "lessons": [
+    {
+      "slug": "cache-basics",
+      "tests_hash": "2a6f9a5d412d"
+    },
+    {
+      "slug": "lru-naive",
+      "tests_hash": "83f733c7e65d"
+    },
+    {
+      "slug": "doubly-linked",
+      "tests_hash": "bf5ef18670bd"
+    },
+    {
+      "slug": "hashmap-dll",
+      "tests_hash": "45fe378ef35a"
+    },
+    {
+      "slug": "thread-safe",
+      "tests_hash": "be6059ef9ae7"
+    },
+    {
+      "slug": "ttl-lru",
+      "tests_hash": "0b88717df88b"
+    },
+    {
+      "slug": "stats",
+      "tests_hash": "1362fab37907"
+    },
+    {
+      "slug": "full-lru",
+      "tests_hash": "abb9f605bd78"
+    }
+  ]
+}
