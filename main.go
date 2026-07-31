@@ -8,40 +8,11 @@ import (
 	"strings"
 )
 
-// TODO (cache-basics): implement per the lesson description.
-
-//type LRUCache struct {
-//	cap  int
-//	keys []string
-//	hits int
-//}
-//
-//func (c *LRUCache) Access(key string) {
-//	if c.cap == 0 {
-//		return
-//	}
-//
-//	for i, k := range c.keys {
-//		if k == key {
-//			c.hits++
-//
-//			c.keys = append(c.keys[:i], c.keys[i+1:]...)
-//			c.keys = append(c.keys, key)
-//			return
-//		}
-//	}
-//
-//	if len(c.keys) == c.cap {
-//		c.keys = c.keys[1:]
-//	}
-//	c.keys = append(c.keys, key)
-//}
-
 func main() {
 	sc := bufio.NewScanner(os.Stdin)
 	sc.Buffer(make([]byte, 1024*1024), 1024*1024)
 
-	dll := NewDLL()
+	lru := NewLRUCache()
 
 	for sc.Scan() {
 		line := sc.Text()
@@ -49,45 +20,37 @@ func main() {
 			continue
 		}
 
-		if strings.HasPrefix(line, "ADD-FRONT") {
+		if strings.HasPrefix(line, "CAP") {
 
-			strs := strings.Split(line[10:], " ")
+			str := strings.TrimSpace(line[4:])
+			num, err := strconv.Atoi(str)
+			if err != nil {
+				fmt.Println(err)
+			}
+
+			lru.setCapacity(num)
+
+		} else if strings.HasPrefix(line, "PUT") {
+
+			strs := strings.Split(line[4:], " ")
+
 			num, err := strconv.Atoi(strs[1])
 			if err != nil {
 				fmt.Println(err)
 			}
 
-			node := NewNode()
-			node.key = strs[0]
-			node.value = num
-			dll.addFront(node)
-			fmt.Println("OK")
+			ops := lru.put(strs[0], num)
+			fmt.Printf("ops=%d\n", ops)
 
-		} else if strings.HasPrefix(line, "REMOVE-KEY") {
+		} else if strings.HasPrefix(line, "GET") {
 
-			str := strings.TrimSpace(line[11:])
+			str := strings.TrimSpace(line[4:])
 
-			node, err := dll.findNodeByKey(str)
-			if err != nil {
-				fmt.Println(err)
-			}
-
-			dll.removeKey(node)
-			fmt.Println("OK")
-
-		} else if strings.HasPrefix(line, "MOVE-FRONT") {
-
-			str := strings.TrimSpace(line[11:])
-
-			node, err := dll.findNodeByKey(str)
-			if err != nil {
-				fmt.Println(err)
-			}
-
-			dll.moveFront(node)
-			fmt.Println("OK")
-		} else if strings.HasPrefix(line, "LIST") {
-			dll.list()
+			node, ops := lru.get(str)
+			fmt.Printf("value=%d ops=%d", node.value, ops)
+			fmt.Println()
+		} else if strings.HasPrefix(line, "STATE") {
+			lru.state()
 		}
 	}
 }
@@ -155,62 +118,81 @@ func (d *DLL) list() {
 	fmt.Println()
 }
 
-type NaiveLRU struct {
-	capacity int
-	keys     []string
-	values   map[string]int
+type LRUCache struct {
+	cap   int
+	dll   *DLL
+	cache map[string]*Node
 }
 
-func NewNaiveLRU(capacity int) *NaiveLRU {
-	return &NaiveLRU{
-		capacity: capacity,
-		keys:     make([]string, 0, capacity),
-		values:   make(map[string]int),
+func NewLRUCache() *LRUCache {
+	return &LRUCache{
+		cap:   0,
+		dll:   NewDLL(),
+		cache: make(map[string]*Node),
 	}
 }
 
-func (c *NaiveLRU) put(key string, value int) {
-
-	if c.values[key] != 0 {
-		c.values[key] = value
-		c.updateKeys(key)
-		return
-	}
-
-	if len(c.keys) >= c.capacity {
-		delete(c.values, c.keys[len(c.keys)-1])
-		c.values[key] = value
-		c.updateKeys(key)
-		return
-	}
-
-	c.values[key] = value
-	c.updateKeys(key)
+func (c *LRUCache) setCapacity(cap int) {
+	c.cap = cap
 }
 
-func (c *NaiveLRU) get(key string) int {
-	c.updateKeys(key)
-	return c.values[key]
+func (c *LRUCache) get(key string) (*Node, int) {
+	ops := 0
+	if node, ok := c.cache[key]; ok {
+		ops++
+
+		c.dll.removeKey(node)
+		ops++
+
+		c.dll.moveFront(node)
+		ops++
+		return node, ops
+	}
+
+	return nil, 0
 }
 
-func (c *NaiveLRU) state() {
-	for _, k := range c.keys {
-		fmt.Printf("%s=%d ", k, c.values[k])
+func (c *LRUCache) put(key string, value int) int {
+	ops := 0
+	if c.cap == 0 {
+		return 0
 	}
+
+	if node, ok := c.cache[key]; ok {
+		ops++
+
+		node.value = value
+		c.dll.removeKey(node)
+		ops++
+
+		c.dll.addFront(node)
+		ops++
+
+		c.cache[key] = node
+		ops += 2
+		return ops
+	}
+
+	if len(c.cache) >= c.cap {
+		node := c.dll.tail.prev
+		c.dll.removeKey(c.dll.tail.prev)
+		ops++
+
+		delete(c.cache, node.key)
+		ops++
+	}
+
+	newNode := NewNode()
+	newNode.key = key
+	newNode.value = value
+	c.dll.addFront(newNode)
+	ops++
+
+	c.cache[key] = newNode
+	ops++
+	return ops
 }
 
-func (c *NaiveLRU) updateKeys(key string) {
-	var newKeys []string
-	newKeys = append(newKeys, key)
-
-	for _, k := range c.keys {
-		if len(newKeys) >= c.capacity {
-			break
-		}
-		if k == key {
-			continue
-		}
-		newKeys = append(newKeys, k)
-	}
-	c.keys = newKeys
+func (c *LRUCache) state() {
+	c.dll.list()
 }
