@@ -12,7 +12,8 @@ func main() {
 	sc := bufio.NewScanner(os.Stdin)
 	sc.Buffer(make([]byte, 1024*1024), 1024*1024)
 
-	var shardedLRU []*LRUCache
+	lru := NewLRUCache()
+	now := 0
 
 	for sc.Scan() {
 		line := sc.Text()
@@ -20,26 +21,27 @@ func main() {
 			continue
 		}
 
-		if strings.HasPrefix(line, "INIT") {
+		if strings.HasPrefix(line, "NOW") {
 
-			strs := strings.Split(line[5:], " ")
+			str := strings.TrimSpace(line[4:])
 
-			numShards, err := strconv.Atoi(strs[0])
+			time, err := strconv.Atoi(str)
 			if err != nil {
 				fmt.Println(err)
 			}
 
-			shardCap, err := strconv.Atoi(strs[1])
+			now = time
+
+		} else if strings.HasPrefix(line, "CAP") {
+
+			str := strings.TrimSpace(line[4:])
+
+			num, err := strconv.Atoi(str)
 			if err != nil {
 				fmt.Println(err)
 			}
 
-			for i := 0; i < numShards; i++ {
-				shardedLRU = append(shardedLRU, NewLRUCache())
-				shardedLRU[i].cap = shardCap
-			}
-
-			fmt.Println("OK")
+			lru.setCapacity(num)
 
 		} else if strings.HasPrefix(line, "PUT") {
 
@@ -50,30 +52,100 @@ func main() {
 				fmt.Println(err)
 			}
 
-			shardIndex := keyHash(strs[0]) % len(shardedLRU)
-			shardedLRU[shardIndex].put(strs[0], num)
+			lru.put(strs[0], num)
 
-			fmt.Printf("OK shard=%d", shardIndex)
-			fmt.Println()
+			if len(strs) > 2 {
+				sec, err := strconv.Atoi(strs[2])
+				if err != nil {
+					fmt.Println(err)
+				}
+				lru.putTime(strs[0], sec)
+			}
 
 		} else if strings.HasPrefix(line, "GET") {
 
 			str := strings.TrimSpace(line[4:])
 
-			shardIndex := keyHash(str) % len(shardedLRU)
-			value, _ := shardedLRU[shardIndex].get(str)
-
-			fmt.Printf("%d shard=%d", value.value, shardIndex)
-			fmt.Println()
-		} else if strings.HasPrefix(line, "STATS") {
-
-			for i, v := range shardedLRU {
-				fmt.Printf("shard%d=%d ", i, len(v.cache))
+			node, _ := lru.get(str)
+			if node.time > now || node.time == -1 {
+				fmt.Println(node.value)
+				continue
 			}
-			fmt.Println()
+
+			lru.expire(str)
+			fmt.Println("<nil>")
+		} else if strings.HasPrefix(line, "STATE") {
+			lru.state()
 		}
 	}
 }
+
+//func main() {
+//	sc := bufio.NewScanner(os.Stdin)
+//	sc.Buffer(make([]byte, 1024*1024), 1024*1024)
+//
+//	var shardedLRU []*LRUCache
+//
+//	for sc.Scan() {
+//		line := sc.Text()
+//		if line == "" {
+//			continue
+//		}
+//
+//		if strings.HasPrefix(line, "INIT") {
+//
+//			strs := strings.Split(line[5:], " ")
+//
+//			numShards, err := strconv.Atoi(strs[0])
+//			if err != nil {
+//				fmt.Println(err)
+//			}
+//
+//			shardCap, err := strconv.Atoi(strs[1])
+//			if err != nil {
+//				fmt.Println(err)
+//			}
+//
+//			for i := 0; i < numShards; i++ {
+//				shardedLRU = append(shardedLRU, NewLRUCache())
+//				shardedLRU[i].cap = shardCap
+//			}
+//
+//			fmt.Println("OK")
+//
+//		} else if strings.HasPrefix(line, "PUT") {
+//
+//			strs := strings.Split(line[4:], " ")
+//
+//			num, err := strconv.Atoi(strs[1])
+//			if err != nil {
+//				fmt.Println(err)
+//			}
+//
+//			shardIndex := keyHash(strs[0]) % len(shardedLRU)
+//			shardedLRU[shardIndex].put(strs[0], num)
+//
+//			fmt.Printf("OK shard=%d", shardIndex)
+//			fmt.Println()
+//
+//		} else if strings.HasPrefix(line, "GET") {
+//
+//			str := strings.TrimSpace(line[4:])
+//
+//			shardIndex := keyHash(str) % len(shardedLRU)
+//			value, _ := shardedLRU[shardIndex].get(str)
+//
+//			fmt.Printf("%d shard=%d", value.value, shardIndex)
+//			fmt.Println()
+//		} else if strings.HasPrefix(line, "STATS") {
+//
+//			for i, v := range shardedLRU {
+//				fmt.Printf("shard%d=%d ", i, len(v.cache))
+//			}
+//			fmt.Println()
+//		}
+//	}
+//}
 
 func keyHash(key string) int {
 	var h uint32
@@ -87,6 +159,7 @@ type Node struct {
 	prev, next *Node
 	key        string
 	value      int
+	time       int
 }
 
 func NewNode() *Node {
@@ -95,6 +168,7 @@ func NewNode() *Node {
 		next:  nil,
 		key:   "",
 		value: 0,
+		time:  -1,
 	}
 }
 
@@ -219,6 +293,15 @@ func (c *LRUCache) put(key string, value int) int {
 	c.cache[key] = newNode
 	ops++
 	return ops
+}
+
+func (c *LRUCache) putTime(key string, time int) {
+	c.cache[key].time = time
+}
+
+func (c *LRUCache) expire(key string) {
+	c.dll.removeKey(c.cache[key])
+	delete(c.cache, key)
 }
 
 func (c *LRUCache) state() {
