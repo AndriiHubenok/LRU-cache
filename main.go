@@ -12,8 +12,9 @@ func main() {
 	sc := bufio.NewScanner(os.Stdin)
 	sc.Buffer(make([]byte, 1024*1024), 1024*1024)
 
-	lru := NewLRUCache()
+	var shardedLRU []*LRUCache
 	now := 0
+	evictions := 0
 
 	for sc.Scan() {
 		line := sc.Text()
@@ -21,7 +22,31 @@ func main() {
 			continue
 		}
 
-		if strings.HasPrefix(line, "NOW") {
+		if strings.HasPrefix(line, "INIT") {
+			now = 0
+			evictions = 0
+
+			strs := strings.Split(line[5:], " ")
+
+			numShards, err := strconv.Atoi(strs[0])
+			if err != nil {
+				fmt.Println(err)
+			}
+
+			shardCap, err := strconv.Atoi(strs[1])
+			if err != nil {
+				fmt.Println(err)
+			}
+
+			shardedLRU = make([]*LRUCache, numShards)
+			for i := 0; i < numShards; i++ {
+				shardedLRU[i] = NewLRUCache()
+				shardedLRU[i].cap = shardCap
+			}
+
+			fmt.Println("OK")
+
+		} else if strings.HasPrefix(line, "NOW") {
 
 			str := strings.TrimSpace(line[4:])
 
@@ -32,17 +57,6 @@ func main() {
 
 			now = time
 
-		} else if strings.HasPrefix(line, "CAP") {
-
-			str := strings.TrimSpace(line[4:])
-
-			num, err := strconv.Atoi(str)
-			if err != nil {
-				fmt.Println(err)
-			}
-
-			lru.setCapacity(num)
-
 		} else if strings.HasPrefix(line, "PUT") {
 
 			strs := strings.Split(line[4:], " ")
@@ -52,105 +66,66 @@ func main() {
 				fmt.Println(err)
 			}
 
-			lru.put(strs[0], num)
+			shardIndex := keyHash(strs[0]) % len(shardedLRU)
+			shardedLRU[shardIndex].put(strs[0], num)
 
 			if len(strs) > 2 {
 				sec, err := strconv.Atoi(strs[2])
 				if err != nil {
 					fmt.Println(err)
 				}
-				lru.putTime(strs[0], sec)
+				shardedLRU[shardIndex].putTime(strs[0], sec)
 			}
+
+			fmt.Printf("OK shard=%d", shardIndex)
+			fmt.Println()
 
 		} else if strings.HasPrefix(line, "GET") {
 
 			str := strings.TrimSpace(line[4:])
 
-			node, _ := lru.get(str)
+			shardIndex := keyHash(str) % len(shardedLRU)
+			node, _ := shardedLRU[shardIndex].get(str)
+
 			if node == nil {
 				fmt.Println("<nil>")
 				continue
 			}
 
 			if node.time > now || node.time == -1 {
-				fmt.Println(node.value)
+				fmt.Printf("%d shard=%d", node.value, shardIndex)
+				fmt.Println()
 				continue
 			}
 
-			lru.expire(str)
+			evictions++
+			shardedLRU[shardIndex].expire(str)
 			fmt.Println("<nil>")
+
 		} else if strings.HasPrefix(line, "STATS") {
-			lru.stats()
+			hits := 0
+			misses := 0
+
+			for _, v := range shardedLRU {
+				hits += v.hits
+				misses += v.misses
+			}
+
+			var hitRate float64
+			if hits == 0 && misses == 0 {
+				hitRate = 0
+			} else {
+				hitRate = float64(hits) / float64(hits+misses)
+			}
+
+			fmt.Printf("hits=%d misses=%d hit_rate=%.2f", hits, misses, hitRate)
+			fmt.Println()
+
+		} else if strings.HasPrefix(line, "EVICTIONS") {
+			fmt.Println(evictions)
 		}
 	}
 }
-
-//func main() {
-//	sc := bufio.NewScanner(os.Stdin)
-//	sc.Buffer(make([]byte, 1024*1024), 1024*1024)
-//
-//	var shardedLRU []*LRUCache
-//
-//	for sc.Scan() {
-//		line := sc.Text()
-//		if line == "" {
-//			continue
-//		}
-//
-//		if strings.HasPrefix(line, "INIT") {
-//
-//			strs := strings.Split(line[5:], " ")
-//
-//			numShards, err := strconv.Atoi(strs[0])
-//			if err != nil {
-//				fmt.Println(err)
-//			}
-//
-//			shardCap, err := strconv.Atoi(strs[1])
-//			if err != nil {
-//				fmt.Println(err)
-//			}
-//
-//			for i := 0; i < numShards; i++ {
-//				shardedLRU = append(shardedLRU, NewLRUCache())
-//				shardedLRU[i].cap = shardCap
-//			}
-//
-//			fmt.Println("OK")
-//
-//		} else if strings.HasPrefix(line, "PUT") {
-//
-//			strs := strings.Split(line[4:], " ")
-//
-//			num, err := strconv.Atoi(strs[1])
-//			if err != nil {
-//				fmt.Println(err)
-//			}
-//
-//			shardIndex := keyHash(strs[0]) % len(shardedLRU)
-//			shardedLRU[shardIndex].put(strs[0], num)
-//
-//			fmt.Printf("OK shard=%d", shardIndex)
-//			fmt.Println()
-//
-//		} else if strings.HasPrefix(line, "GET") {
-//
-//			str := strings.TrimSpace(line[4:])
-//
-//			shardIndex := keyHash(str) % len(shardedLRU)
-//			value, _ := shardedLRU[shardIndex].get(str)
-//
-//			fmt.Printf("%d shard=%d", value.value, shardIndex)
-//			fmt.Println()
-//		} else if strings.HasPrefix(line, "STATS") {
-//
-//			for i, v := range shardedLRU {
-//				fmt.Printf("shard%d=%d ", i, len(v.cache))
-//			}
-//			fmt.Println()
-//		}
-//	}
-//}
 
 func keyHash(key string) int {
 	var h uint32
