@@ -67,6 +67,11 @@ func main() {
 			str := strings.TrimSpace(line[4:])
 
 			node, _ := lru.get(str)
+			if node == nil {
+				fmt.Println("<nil>")
+				continue
+			}
+
 			if node.time > now || node.time == -1 {
 				fmt.Println(node.value)
 				continue
@@ -74,8 +79,8 @@ func main() {
 
 			lru.expire(str)
 			fmt.Println("<nil>")
-		} else if strings.HasPrefix(line, "STATE") {
-			lru.state()
+		} else if strings.HasPrefix(line, "STATS") {
+			lru.stats()
 		}
 	}
 }
@@ -221,16 +226,20 @@ func (d *DLL) list() {
 }
 
 type LRUCache struct {
-	cap   int
-	dll   *DLL
-	cache map[string]*Node
+	cap    int
+	hits   int
+	misses int
+	dll    *DLL
+	cache  map[string]*Node
 }
 
 func NewLRUCache() *LRUCache {
 	return &LRUCache{
-		cap:   0,
-		dll:   NewDLL(),
-		cache: make(map[string]*Node),
+		cap:    0,
+		hits:   0,
+		misses: 0,
+		dll:    NewDLL(),
+		cache:  make(map[string]*Node),
 	}
 }
 
@@ -241,6 +250,7 @@ func (c *LRUCache) setCapacity(cap int) {
 func (c *LRUCache) get(key string) (*Node, int) {
 	ops := 0
 	if node, ok := c.cache[key]; ok {
+		c.hits++
 		ops++
 
 		c.dll.removeKey(node)
@@ -249,6 +259,8 @@ func (c *LRUCache) get(key string) (*Node, int) {
 		c.dll.moveFront(node)
 		ops++
 		return node, ops
+	} else {
+		c.misses++
 	}
 
 	return nil, 0
@@ -306,4 +318,15 @@ func (c *LRUCache) expire(key string) {
 
 func (c *LRUCache) state() {
 	c.dll.list()
+}
+
+func (c *LRUCache) stats() {
+	var hitRate float64
+	if c.hits == 0 && c.misses == 0 {
+		hitRate = 0
+	} else {
+		hitRate = float64(c.hits) / float64(c.hits+c.misses)
+	}
+
+	fmt.Printf("hits=%d misses=%d hit_rate=%.2f", c.hits, c.misses, hitRate)
 }
