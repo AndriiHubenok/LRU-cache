@@ -98,7 +98,6 @@ func main() {
 				continue
 			}
 
-			evictions++
 			shardedLRU[shardIndex].expire(str)
 			fmt.Println("<nil>")
 
@@ -122,6 +121,10 @@ func main() {
 			fmt.Println()
 
 		} else if strings.HasPrefix(line, "EVICTIONS") {
+
+			for _, v := range shardedLRU {
+				evictions += v.evictions
+			}
 			fmt.Println(evictions)
 		}
 	}
@@ -201,20 +204,22 @@ func (d *DLL) list() {
 }
 
 type LRUCache struct {
-	cap    int
-	hits   int
-	misses int
-	dll    *DLL
-	cache  map[string]*Node
+	cap       int
+	hits      int
+	misses    int
+	evictions int
+	dll       *DLL
+	cache     map[string]*Node
 }
 
 func NewLRUCache() *LRUCache {
 	return &LRUCache{
-		cap:    0,
-		hits:   0,
-		misses: 0,
-		dll:    NewDLL(),
-		cache:  make(map[string]*Node),
+		cap:       0,
+		hits:      0,
+		misses:    0,
+		evictions: 0,
+		dll:       NewDLL(),
+		cache:     make(map[string]*Node),
 	}
 }
 
@@ -268,6 +273,7 @@ func (c *LRUCache) put(key string, value int) int {
 		ops++
 
 		delete(c.cache, node.key)
+		c.evictions++
 		ops++
 	}
 
