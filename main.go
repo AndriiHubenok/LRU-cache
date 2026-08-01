@@ -259,6 +259,7 @@ func (c *LRUCache) put(key string, value int) int {
 		c.dll.removeKey(node)
 		ops++
 
+		node.time = -1
 		c.dll.addFront(node)
 		ops++
 
